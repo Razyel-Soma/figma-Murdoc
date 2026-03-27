@@ -58,6 +58,8 @@ import { registerTokenBrowserApp } from "./apps/token-browser/server.js";
 import { registerDesignSystemDashboardApp } from "./apps/design-system-dashboard/server.js";
 import { registerFigJamTools } from "./core/figjam-tools.js";
 import { registerSlidesTools } from "./core/slides-tools.js";
+import { listSkillsTool, useSkillTool } from "./tools/skills.js";
+
 
 const logger = createChildLogger({ component: "local-server" });
 
@@ -129,13 +131,23 @@ class LocalFigmaConsoleMCP {
 	> = new Map();
 
 	constructor() {
+		const murdocMd = (() => {
+		try {
+			const { readFileSync } = require('fs');
+			const { join, dirname } = require('path');
+			const { fileURLToPath } = require('url');
+			const __d = dirname(fileURLToPath(import.meta.url));
+			return readFileSync(join(__d, '../../figma-murdoc.md'), 'utf-8');
+		} catch { return ''; }
+		})();
+
 		this.server = new McpServer(
 			{
-				name: "Figma Console MCP (Local)",
+				name: "Figma Murdoc",
 				version: "0.1.0",
 			},
 			{
-				instructions: `## Figma Console MCP - Visual Design Workflow
+				instructions: murdocMd + `\n\n---\n\n## Figma Console MCP - Visual Design Workflow
 
 This MCP server enables AI-assisted design creation in Figma. Follow these mandatory workflows:
 
@@ -6164,6 +6176,20 @@ return {
 
 			logger.info("MCP Apps registered (ENABLE_MCP_APPS=true)");
 		}
+
+		this.server.tool(
+			"list_skills",
+			listSkillsTool.description,
+			listSkillsTool.inputSchema as any,
+			listSkillsTool.handler,
+		);
+
+		this.server.tool(
+			"use_skill",
+			useSkillTool.description,
+			useSkillTool.inputSchema as any,
+			useSkillTool.handler,
+		);
 
 		logger.info(
 			"All MCP tools registered successfully (including write operations)",
