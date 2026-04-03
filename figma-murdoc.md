@@ -97,6 +97,60 @@ Llama a list_skills para ver los disponibles. Usa use_skill para cargar uno.
 
 ---
 
+
+---
+
+## Reglas críticas de la Plugin API
+
+Estas reglas vienen de errores encontrados en producción. Aplícalas siempre.
+
+### APIs async obligatorias
+Nunca uses las versiones síncronas — fallan en modo dynamic-page:
+
+- NUNCA: `figma.currentPage = page` → SIEMPRE: `await figma.setCurrentPageAsync(page)`
+- NUNCA: `figma.getNodeById(id)` → SIEMPRE: `await figma.getNodeByIdAsync(id)`
+
+### Effects — estructura correcta
+Los effects requieren blendMode y spread obligatoriamente:
+```javascript
+// Correcto
+node.effects = [{
+  type: 'DROP_SHADOW',
+  color: { r: 0, g: 0, b: 0, a: 0.1 },
+  offset: { x: 0, y: 4 },
+  radius: 8,
+  spread: 0,
+  blendMode: 'NORMAL',
+  visible: true
+}]
+```
+
+Si no estás seguro, usa stroke como alternativa:
+```javascript
+node.strokes = [{ type: 'SOLID', color: { r: 0.89, g: 0.89, b: 0.898 }, opacity: 1 }]
+node.strokeWeight = 1
+```
+
+### Batching de tokens — límite 100 por llamada
+figma_setup_design_tokens acepta máximo 100 tokens por operación.
+Si el DS tiene más, divide en múltiples llamadas por categoría:
+- Llamada 1: colores
+- Llamada 2: tipografía
+- Llamada 3: espaciado + radios + sombras
+
+### Timeout de figma_execute
+El default de 5000ms es insuficiente para operaciones complejas.
+
+| Operación | Timeout |
+|---|---|
+| 1-5 nodos simples | 5000ms |
+| Frame con auto layout | 10000ms |
+| Pantalla completa (10-20 nodos) | 20000ms |
+| Flujo completo múltiples pantallas | 25000ms |
+| Sistema de tokens completo | 30000ms |
+
+Siempre especifica el timeout explícitamente en operaciones complejas.
+
 ## Limitaciones conocidas
 
 - Solo funciona con Figma Desktop, no con Figma en el navegador

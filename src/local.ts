@@ -6187,7 +6187,7 @@ return {
 		this.server.tool(
 			"use_skill",
 			useSkillTool.description,
-			useSkillTool.inputSchema as any,
+			useSkillTool.inputSchema,
 			useSkillTool.handler,
 		);
 

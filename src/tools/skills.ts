@@ -1,13 +1,10 @@
+import { z } from 'zod'
 import { listSkills, loadSkillWithBase } from '../skills/loader.js'
 
 export const listSkillsTool = {
   name: 'list_skills',
   description: 'Lista todos los skills de diseño disponibles. Llama esto antes de use_skill para saber qué puedes cargar.',
-  inputSchema: {
-    type: 'object' as const,
-    properties: {},
-    required: [],
-  },
+  inputSchema: {},
   handler: async () => {
     const skills = listSkills()
     if (skills.length === 0) {
@@ -26,14 +23,7 @@ export const useSkillTool = {
   name: 'use_skill',
   description: 'Carga un skill de diseño e inyecta sus instrucciones como contexto. El skill base figma-use se incluye automáticamente.',
   inputSchema: {
-    type: 'object' as const,
-    properties: {
-      skill: {
-        type: 'string',
-        description: 'Nombre del skill sin extensión .md. Ejemplos: generate-onboarding, apply-design-system',
-      },
-    },
-    required: ['skill'],
+    skill: z.string().describe('Nombre del skill sin extensión .md. Ejemplos: generate-onboarding, apply-design-system'),
   },
   handler: async ({ skill }: { skill: string }) => {
     try {
