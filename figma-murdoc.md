@@ -85,6 +85,8 @@ Llama a list_skills para ver los disponibles. Usa use_skill para cargar uno.
 | Conectar diseños al sistema de diseño | apply-design-system |
 | Migrar componentes a slots nativos | migrate-to-slots |
 | Patrones de composición con slots | slot-patterns |
+| Crear librería de componentes desde código | generate-library |
+| Generar specs de screen reader (a11y) | create-voice |
 
 ---
 
