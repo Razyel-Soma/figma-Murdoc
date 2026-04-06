@@ -113,43 +113,55 @@ Nunca uses las versiones síncronas — fallan en modo dynamic-page:
 
 - NUNCA: `figma.currentPage = page` → SIEMPRE: `await figma.setCurrentPageAsync(page)`
 - NUNCA: `figma.getNodeById(id)` → SIEMPRE: `await figma.getNodeByIdAsync(id)`
+- NUNCA: `figma.getVariableById(id)` → SIEMPRE: `await figma.variables.getVariableByIdAsync(id)`
 - SIEMPRE: `await figma.loadFontAsync({family, style})` antes de asignar `.characters`
 - SIEMPRE: `await node.exportAsync(settings)` — nunca sin await
 
-### Effects — estructura correcta
-`spread` y `blendMode` **NO son propiedades válidas** de effects en la Plugin API. Usarlos causa errores silenciosos:
+### Effects — blendMode obligatorio, spread prohibido
+`blendMode` **SÍ es obligatorio** en shadows. `spread` **NO existe** en la Plugin API:
 ```javascript
-// ❌ INCORRECTO — spread y blendMode NO existen en effects
+// ❌ INCORRECTO — spread no existe, falta blendMode
 node.effects = [{
   type: 'DROP_SHADOW',
   color: { r: 0, g: 0, b: 0, a: 0.1 },
   offset: { x: 0, y: 4 },
   radius: 8,
-  spread: 0,           // ← NO EXISTE en Plugin API
-  blendMode: 'NORMAL', // ← Es propiedad del NODO, no del effect
-  visible: true
+  spread: 0,           // ← NO EXISTE
+  visible: true        // ← sin blendMode no se aplica
 }]
 
-// ✅ CORRECTO — solo propiedades válidas
+// ✅ CORRECTO — con blendMode, sin spread
 node.effects = [{
   type: 'DROP_SHADOW',
   color: { r: 0, g: 0, b: 0, a: 0.1 },
   offset: { x: 0, y: 4 },
   radius: 8,
+  blendMode: 'NORMAL',
   visible: true
 }]
-
-// blendMode va en el nodo, no en el effect
-node.blendMode = 'NORMAL'
 ```
 
 Propiedades válidas por tipo de effect:
-- `DROP_SHADOW` / `INNER_SHADOW`: type, color, offset, radius, visible
+- `DROP_SHADOW` / `INNER_SHADOW`: type, color, offset, radius, **blendMode**, visible
 - `LAYER_BLUR` / `BACKGROUND_BLUR`: type, radius, visible
 
-`spread` solo existe en la REST API v1, no en la Plugin API.
+### Variables — bindear correctamente
+No usar `setBoundVariable("fills", var)`. Usar `boundVariables` dentro del paint object:
+```javascript
+node.fills = [{
+  type: 'SOLID',
+  color: { r: 0.2, g: 0.4, b: 1 },
+  boundVariables: { color: { type: 'VARIABLE_ALIAS', id: variable.id } }
+}]
+```
 
-Si no estás seguro, usa stroke como alternativa visual:
+### Layout Sizing — enums distintos
+- `primaryAxisSizingMode`: `"AUTO"` (hug) | `"FIXED"` — NO usar `"HUG"`
+- `layoutSizingHorizontal/Vertical`: `"FILL"` | `"HUG"` | `"FIXED"` — NO usar `"AUTO"`
+- `layoutSizingHorizontal = "FILL"` solo funciona DESPUÉS de `appendChild`
+- Inputs/botones: mínimo 44px de alto para touch target. Usar `resize(w, 44)` con `primaryAxisSizingMode: "FIXED"`
+
+Si no estás seguro de sombras, usa stroke como alternativa visual:
 ```javascript
 node.strokes = [{ type: 'SOLID', color: { r: 0.89, g: 0.89, b: 0.898 }, opacity: 1 }]
 node.strokeWeight = 1

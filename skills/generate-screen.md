@@ -28,6 +28,9 @@ El usuario puede especificar antes de ejecutar:
 - Si no hay variables ni componentes, preguntar al usuario si continúa con valores básicos
 ```
 
+> **⚠️ REGLA CLAVE: Reusar componentes existentes.**
+> Si `figma_search_components` encuentra Button, Input, Card, etc., CREAR INSTANCIAS con `importComponentByKeyAsync` en vez de construir elementos desde cero. Esto es lo que hace que las pantallas se vean profesionales.
+
 ### Paso 2 — Crear sección contenedora
 ```
 - Crear una Section en el canvas con el nombre del flujo
@@ -39,15 +42,23 @@ El usuario puede especificar antes de ejecutar:
 
 > **⚠️ REGLAS OBLIGATORIAS para figma_execute en este paso:**
 >
-> **Async:** Siempre usar `await figma.getNodeByIdAsync(id)` y `await figma.setCurrentPageAsync(page)`. Las versiones sync (`figma.getNodeById`, `figma.currentPage = x`) están deprecadas y FALLAN.
+> **Async:** Siempre usar `await figma.getNodeByIdAsync(id)`, `await figma.setCurrentPageAsync(page)`, `await figma.variables.getVariableByIdAsync(id)`. Las versiones sync FALLAN.
 >
 > **Fonts:** Siempre hacer `await figma.loadFontAsync({family, style})` ANTES de asignar `.characters` a un nodo de texto.
 >
 > **Timeout:** Usar `timeout: 15000` para crear un frame con contenido. Usar `timeout: 25000` si se crean múltiples frames en una sola llamada. Nunca dejar el default de 5000.
 >
-> **Effects:** Si aplicas sombras, NO usar `spread` ni `blendMode` dentro del effect. Ver reglas en figma-use.
+> **Effects:** Si aplicas sombras, INCLUIR `blendMode: "NORMAL"` obligatoriamente. NO usar `spread`.
 >
-> **Dividir operaciones:** Crear cada frame en una llamada separada a figma_execute. NO intentar crear todo el flujo (4+ pantallas) en una sola llamada — se agotará el timeout y el resultado se truncará.
+> **Variables:** Bindear con `boundVariables` dentro del paint object, NO con `setBoundVariable`.
+>
+> **Layout Sizing:** `primaryAxisSizingMode` usa `"AUTO"` (no `"HUG"`). `layoutSizingVertical` usa `"HUG"` (no `"AUTO"`). Setear `"FILL"` DESPUÉS de `appendChild`.
+>
+> **Touch targets:** Inputs y botones mínimo 44px de alto. Usar `resize(w, 44)` con `primaryAxisSizingMode: "FIXED"`.
+>
+> **Reusar componentes:** Usar `importComponentByKeyAsync` para instanciar componentes existentes. NO recrear desde cero.
+>
+> **Dividir operaciones:** Crear cada frame en una llamada separada a figma_execute. NO intentar crear todo el flujo (4+ pantallas) en una sola llamada.
 >
 > **Código compacto:** Devolver solo `{ id, name }` de los nodos creados. No devolver el nodo completo.
 

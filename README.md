@@ -74,13 +74,13 @@ await figma.setCurrentPageAsync(page);
 await figma.loadFontAsync({ family, style });
 ```
 
-### Effects — sin spread ni blendMode
+### Effects — blendMode obligatorio, spread prohibido
 ```javascript
-// ❌ spread y blendMode NO existen en Plugin API effects
-node.effects = [{ type: 'DROP_SHADOW', spread: 0, blendMode: 'NORMAL', ... }];
+// ❌ spread no existe, falta blendMode
+node.effects = [{ type: 'DROP_SHADOW', spread: 0, ... }];
 
-// ✅ Solo propiedades válidas
-node.effects = [{ type: 'DROP_SHADOW', color, offset, radius, visible: true }];
+// ✅ Con blendMode, sin spread
+node.effects = [{ type: 'DROP_SHADOW', color, offset, radius, blendMode: 'NORMAL', visible: true }];
 ```
 
 ### Timeouts adecuados

@@ -45,6 +45,7 @@ const node = await figma.getNodeByIdAsync("123:456");
 |------------------------------|------------------------------------------|
 | `figma.currentPage = x`     | `await figma.setCurrentPageAsync(x)`     |
 | `figma.getNodeById(id)`     | `await figma.getNodeByIdAsync(id)`       |
+| `figma.getVariableById(id)` | `await figma.variables.getVariableByIdAsync(id)` |
 | `figma.root.children` (set) | `await figma.setCurrentPageAsync(page)`  |
 | `node.exportAsync()` (sin await) | `await node.exportAsync(settings)`  |
 | `figma.loadFontAsync()` (sin await) | `await figma.loadFontAsync({family, style})` |
@@ -53,48 +54,112 @@ const node = await figma.getNodeByIdAsync("123:456");
 
 ### 2. Sintaxis correcta de Effects
 
-Los effects en Figma tienen una estructura específica. Los errores más comunes:
+Los effects requieren `blendMode` obligatoriamente en shadows. Sin él, la sombra no se aplica:
 
 ```javascript
-// ❌ INCORRECTO — blendMode NO existe en effects, spread NO existe en DROP_SHADOW
+// ❌ INCORRECTO — falta blendMode, spread NO existe
 node.effects = [{
   type: "DROP_SHADOW",
   color: { r: 0, g: 0, b: 0, a: 0.25 },
   offset: { x: 0, y: 4 },
   radius: 8,
-  spread: 0,           // ← NO EXISTE en DROP_SHADOW
-  blendMode: "NORMAL", // ← NO ES propiedad de effects
-  visible: true
+  spread: 0,           // ← NO EXISTE en Plugin API
+  visible: true        // ← falta blendMode → sombra no se aplica
 }];
 
-// ✅ CORRECTO — estructura válida de DROP_SHADOW
+// ✅ CORRECTO — con blendMode, sin spread
 node.effects = [{
   type: "DROP_SHADOW",
   color: { r: 0, g: 0, b: 0, a: 0.25 },
   offset: { x: 0, y: 4 },
   radius: 8,
+  blendMode: "NORMAL",
   visible: true
 }];
 ```
 
 **Propiedades válidas por tipo de effect:**
 
-| Tipo               | Propiedades válidas                                         |
-|--------------------|------------------------------------------------------------|
-| `DROP_SHADOW`      | `type`, `color`, `offset`, `radius`, `visible`             |
-| `INNER_SHADOW`     | `type`, `color`, `offset`, `radius`, `visible`             |
-| `LAYER_BLUR`       | `type`, `radius`, `visible`                                |
-| `BACKGROUND_BLUR`  | `type`, `radius`, `visible`                                |
+| Tipo               | Propiedades válidas                                                |
+|--------------------|--------------------------------------------------------------------|
+| `DROP_SHADOW`      | `type`, `color`, `offset`, `radius`, **`blendMode`**, `visible`    |
+| `INNER_SHADOW`     | `type`, `color`, `offset`, `radius`, **`blendMode`**, `visible`    |
+| `LAYER_BLUR`       | `type`, `radius`, `visible`                                        |
+| `BACKGROUND_BLUR`  | `type`, `radius`, `visible`                                        |
 
-**`spread` SOLO existe en la REST API v1**, no en la Plugin API. No lo uses en `figma_execute`.
+**`spread` NO existe** en la Plugin API (solo en REST API v1). **`blendMode` SÍ es obligatorio** en shadows.
 
-**`blendMode`** es una propiedad del **nodo**, no del effect:
+### 3. Variables: cómo bindear correctamente
+
+No usar `setBoundVariable("fills", variable)`. La forma correcta es incluir `boundVariables` dentro del paint object:
+
 ```javascript
-// ✅ blendMode va en el nodo, no en el effect
-node.blendMode = "NORMAL"; // o "MULTIPLY", "SCREEN", etc.
+// ❌ INCORRECTO — no funciona
+node.setBoundVariable("fills", variable);
+
+// ✅ CORRECTO — boundVariables dentro del paint
+const variable = await figma.variables.getVariableByIdAsync(variableId);
+node.fills = [{
+  type: "SOLID",
+  color: { r: 0.2, g: 0.4, b: 1 },
+  boundVariables: {
+    color: { type: "VARIABLE_ALIAS", id: variable.id }
+  }
+}];
 ```
 
-### 3. Timeout: usa tiempos adecuados
+### 4. Layout Sizing: enums distintos según la API
+
+`primaryAxisSizingMode` y `layoutSizingHorizontal/Vertical` usan enums DIFERENTES:
+
+```javascript
+// ❌ INCORRECTO — mezclar enums
+frame.primaryAxisSizingMode = "HUG";    // No existe
+frame.layoutSizingVertical = "AUTO";    // No existe para este prop
+
+// ✅ CORRECTO — enums por propiedad
+frame.primaryAxisSizingMode = "AUTO";   // "AUTO" = hug, "FIXED" = fixed
+frame.counterAxisSizingMode = "AUTO";   // "AUTO" = hug, "FIXED" = fixed
+frame.layoutSizingHorizontal = "FILL";  // "FILL", "HUG", "FIXED"
+frame.layoutSizingVertical = "HUG";     // "FILL", "HUG", "FIXED"
+```
+
+**⚠️ IMPORTANTE:** `layoutSizingHorizontal = "FILL"` solo funciona DESPUÉS de `appendChild`:
+
+```javascript
+// ❌ FILL antes de appendChild — se ignora
+const text = figma.createText();
+text.layoutSizingHorizontal = "FILL";
+frame.appendChild(text);
+
+// ✅ FILL después de appendChild — funciona
+const text = figma.createText();
+frame.appendChild(text);
+text.layoutSizingHorizontal = "FILL";
+```
+
+### 5. Frames: evitar colapso a 0px
+
+Frames con `primaryAxisSizingMode: "AUTO"` colapsan si no tienen contenido con altura:
+
+```javascript
+// ❌ Input colapsado a 10px
+const input = figma.createFrame();
+input.layoutMode = "HORIZONTAL";
+input.primaryAxisSizingMode = "AUTO";
+
+// ✅ Input con altura mínima para touch target (44px)
+const input = figma.createFrame();
+input.layoutMode = "HORIZONTAL";
+input.primaryAxisSizingMode = "FIXED";
+input.resize(327, 44);
+input.paddingTop = 12;
+input.paddingBottom = 12;
+input.paddingLeft = 16;
+input.paddingRight = 16;
+```
+
+### 6. Timeout: usa tiempos adecuados
 
 El timeout por defecto de `figma_execute` es **5000ms (5s)**, que es insuficiente para operaciones complejas.
 
@@ -125,7 +190,7 @@ const text = figma.createText();
 text.characters = "Hello World";
 ```
 
-### 4. Código compacto: evita el límite de respuesta
+### 7. Código compacto: evita el límite de respuesta
 
 Las respuestas del plugin tienen un límite de tamaño. Para evitar truncamiento:
 
@@ -174,7 +239,12 @@ return nodes.map(n => ({ id: n.id, name: n.name, type: n.type }));
 - No usar fuentes fuera del archivo
 - No crear componentes si ya existen en el sistema de diseño
 - No dejar capas sin nombre
-- **No usar APIs sync cuando existe versión async**
-- **No poner `spread` ni `blendMode` dentro de effects**
+- **No usar APIs sync cuando existe versión async** (incluye `getVariableById`)
+- **No omitir `blendMode` en effects DROP_SHADOW/INNER_SHADOW**
+- **No usar `spread` en effects** (solo existe en REST API)
 - **No dejar timeout en 5000 para operaciones complejas**
 - **No devolver objetos completos de nodos — solo los campos necesarios**
+- **No usar `setBoundVariable("fills", var)` — usar `boundVariables` en el paint object**
+- **No mezclar enums de sizing** (`primaryAxisSizingMode` usa `"AUTO"`, `layoutSizingVertical` usa `"HUG"`)
+- **No setear `layoutSizingHorizontal = "FILL"` antes de `appendChild`**
+- **No crear frames con `primaryAxisSizingMode: "AUTO"` sin contenido** — colapsan a 0px

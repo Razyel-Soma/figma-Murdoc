@@ -121,7 +121,7 @@ Esperar confirmación del usuario antes de crear.
 
 **Para cada componente:**
 ```javascript
-// ✅ Patrón: crear un componente con variantes — timeout: 15000
+// ✅ Patrón probado en producción — timeout: 15000
 await figma.loadFontAsync({ family: "Inter", style: "Regular" });
 await figma.loadFontAsync({ family: "Inter", style: "Medium" });
 await figma.loadFontAsync({ family: "Inter", style: "Bold" });
@@ -131,32 +131,65 @@ const section = await figma.getNodeByIdAsync("SECTION_ID");
 // Crear componente base
 const component = figma.createComponent();
 component.name = "Button";
-component.resize(120, 40);
+component.resize(120, 44);  // ⚠️ Mínimo 44px para touch target
 component.layoutMode = "HORIZONTAL";
 component.primaryAxisAlignItems = "CENTER";
 component.counterAxisAlignItems = "CENTER";
 component.itemSpacing = 8;
 component.paddingLeft = 16;
 component.paddingRight = 16;
-component.paddingTop = 8;
-component.paddingBottom = 8;
+component.paddingTop = 10;
+component.paddingBottom = 10;
 component.cornerRadius = 8;
-component.fills = [{ type: "SOLID", color: { r: 0.2, g: 0.4, b: 1 } }];
+
+// ⚠️ Bindear variable con boundVariables, NO setBoundVariable
+const vars = await figma.variables.getLocalVariablesAsync();
+const bgVar = vars.find(v => v.name.includes('primary'));
+if (bgVar) {
+  component.fills = [{
+    type: "SOLID",
+    color: { r: 0.2, g: 0.4, b: 1 },
+    boundVariables: { color: { type: "VARIABLE_ALIAS", id: bgVar.id } }
+  }];
+} else {
+  component.fills = [{ type: "SOLID", color: { r: 0.2, g: 0.4, b: 1 } }];
+}
+
+// ⚠️ Sombra con blendMode obligatorio
+component.effects = [{
+  type: "DROP_SHADOW",
+  color: { r: 0, g: 0, b: 0, a: 0.1 },
+  offset: { x: 0, y: 2 },
+  radius: 4,
+  blendMode: "NORMAL",
+  visible: true
+}];
 
 // Agregar texto
 const label = figma.createText();
 label.characters = "Button";
 label.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
 component.appendChild(label);
+// ⚠️ layoutSizing DESPUÉS de appendChild
+label.layoutSizingHorizontal = "HUG";
 
 // Agregar text property
 component.addComponentProperty("Label", "TEXT", "Button");
-label.componentPropertyReferences = { characters: "Label#..." };
 
 section.appendChild(component);
-
 return { id: component.id, name: component.name };
 ```
+
+### Errores comunes al crear componentes (descubiertos en testing)
+
+| Error | Fix |
+|---|---|
+| Input colapsa a 10px de alto | Usar `resize(width, 44)` con `primaryAxisSizingMode: "FIXED"` |
+| `layoutSizingHorizontal = "FILL"` no funciona | Setear DESPUÉS de `appendChild`, no antes |
+| `primaryAxisSizingMode: "HUG"` falla | El valor correcto es `"AUTO"` |
+| `layoutSizingVertical: "AUTO"` falla | El valor correcto es `"HUG"` |
+| Variables no se bindean | Usar `boundVariables` dentro del paint object |
+| Sombra no aparece | Agregar `blendMode: "NORMAL"` obligatoriamente |
 
 ### Paso 6 — Crear component sets (variantes)
 
