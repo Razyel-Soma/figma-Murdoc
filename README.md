@@ -7,21 +7,25 @@ Fork del [Figma Console MCP](https://github.com/southleft/figma-console-mcp) ext
 - **Sistema de Skills** — instrucciones en markdown que definen flujos de trabajo completos para diseñadores
 - **Loader dinámico** — los skills se leen en tiempo real sin recompilar ni reiniciar el servidor
 - **Instrucciones de arranque** — el servidor carga `figma-murdoc.md` al iniciar
-- **11 skills listos para usar** — cubre los workflows más comunes de un equipo de diseño
+- **15 skills listos para usar** — cubre los workflows más comunes de un equipo de diseño
 - **Integración con Radix UI** — sistema de diseño base accesible con skills por industria
+- **Soporte para Slots nativos** — auditoría, migración y patrones de composición con la nueva feature de Figma
+- **Specs de accesibilidad** — generación de specs para VoiceOver, TalkBack y ARIA
+- **Reglas de Plugin API** — documentación de errores comunes y mejores prácticas integrada en los skills
 
-## Skills disponibles
+## Skills disponibles (15)
 
 ### Base
 | Skill | Qué hace |
 |---|---|
-| `figma-use` | Skill base obligatorio. Define cómo trabajar en el canvas de Figma |
+| `figma-use` | Skill base obligatorio. Define cómo trabajar en el canvas, reglas de Plugin API (async, effects, timeouts, código compacto) y limitaciones conocidas |
 
-### Generación de pantallas
+### Generación
 | Skill | Qué hace |
 |---|---|
-| `generate-screen` | Genera cualquier pantalla: onboarding, login, dashboard, empty states o custom |
+| `generate-screen` | Genera cualquier pantalla: onboarding, login, dashboard, empty states o custom. Incluye estructura slot-ready |
 | `generate-onboarding` | Flujo de onboarding mobile de 4 pantallas con sistema de diseño |
+| `generate-library` | Crea librería de componentes en Figma desde un codebase (React, Vue, Angular, Svelte). Extrae props, variantes, tokens y los recrea como componentes nativos |
 
 ### Documentación
 | Skill | Qué hace |
@@ -32,13 +36,20 @@ Fork del [Figma Console MCP](https://github.com/southleft/figma-console-mcp) ext
 ### Handoff a desarrollo
 | Skill | Qué hace |
 |---|---|
-| `prepare-handoff` | Prepara diseños para desarrollo: anotaciones, nomenclatura y "Ready for dev" |
+| `prepare-handoff` | Prepara diseños para desarrollo: anotaciones, nomenclatura, mapeo de slots a código (React/Vue/Angular) y "Ready for dev" |
 | `sync-tokens` | Exporta variables de Figma a CSS, Tailwind, JSON o Sass |
 
 ### Auditoría y calidad
 | Skill | Qué hace |
 |---|---|
-| `audit-quality` | Detecta drift del DS, problemas WCAG y valores hardcodeados |
+| `audit-quality` | Detecta drift del DS, problemas WCAG, valores hardcodeados y candidatos a migración de slots |
+| `create-voice` | Genera specs de screen reader (VoiceOver, TalkBack, ARIA) desde diseños UI. Roles, labels, hints y orden de lectura |
+
+### Slots nativos de Figma
+| Skill | Qué hace |
+|---|---|
+| `migrate-to-slots` | Audita librería para detectar candidatos a slots, reestructura componentes y prepara frames para "Convert to slot" |
+| `slot-patterns` | Patrones de composición con slots para Card, Modal, ListItem, NavBar y FormSection |
 
 ### Sistema de diseño con Radix UI
 | Skill | Qué hace |
@@ -46,6 +57,57 @@ Fork del [Figma Console MCP](https://github.com/southleft/figma-console-mcp) ext
 | `setup-radix-base` | Importa tokens de Radix UI como variables en Figma |
 | `generate-industry` | Genera DS completo por industria: travel, fintech, ecommerce, health, saas |
 | `apply-design-system` | Conecta diseños existentes al sistema de diseño activo |
+
+## Reglas de Plugin API integradas
+
+Los skills incluyen documentación de errores comunes encontrados en producción:
+
+### APIs async obligatorias
+```javascript
+// ❌ NUNCA — falla silenciosamente
+figma.getNodeById(id);
+figma.currentPage = page;
+
+// ✅ SIEMPRE — async obligatorio
+await figma.getNodeByIdAsync(id);
+await figma.setCurrentPageAsync(page);
+await figma.loadFontAsync({ family, style });
+```
+
+### Effects — sin spread ni blendMode
+```javascript
+// ❌ spread y blendMode NO existen en Plugin API effects
+node.effects = [{ type: 'DROP_SHADOW', spread: 0, blendMode: 'NORMAL', ... }];
+
+// ✅ Solo propiedades válidas
+node.effects = [{ type: 'DROP_SHADOW', color, offset, radius, visible: true }];
+```
+
+### Timeouts adecuados
+| Operación | Timeout |
+|---|---|
+| Nodo simple | 5000ms |
+| Frame con Auto Layout | 10000ms |
+| Pantalla completa | 20000ms |
+| Flujo múltiple | 25000ms |
+| Sistema de tokens | 30000ms |
+
+### Código compacto
+Devolver solo `{ id, name }` — nunca nodos completos. Dividir operaciones grandes en múltiples llamadas.
+
+## Soporte de Slots nativos
+
+Los slots son la nueva feature de Figma (open beta marzo 2026) que permite áreas flexibles dentro de componentes.
+
+**Estado de la Plugin API:**
+| Operación | Soportado |
+|---|---|
+| Detectar slots (`node.type === "SLOT"`) | ✅ |
+| Leer slot properties | ✅ |
+| Crear slots programáticamente | ❌ |
+| Modificar slots en instancias | ❌ |
+
+Murdoc puede auditar, reestructurar y preparar componentes para slots. El paso final "Convert to slot" lo hace el diseñador con un click.
 
 ## Flujo Radix UI → Figma → Showcase
 
@@ -65,12 +127,26 @@ Fork del [Figma Console MCP](https://github.com/southleft/figma-console-mcp) ext
    └── Produce index.html con tokens, componentes y flujos listos para desplegar
 ```
 
-**Ejemplo completo:**
+## Flujo Código → Figma
+
 ```
-"Configura Radix base"                        → setup-radix-base
-"Genera el DS de travel para Wanderly"        → generate-industry (travel)
-"Documenta los componentes de Wanderly"       → generate-documentation
-"Genera el showcase para mostrarle al cliente" → generate-showcase-page
+1. generate-library
+   ├── Analiza codebase (React/Vue/Angular/Svelte)
+   ├── Extrae props, variantes, tokens
+   └── Crea componentes nativos en Figma con component properties
+
+2. migrate-to-slots (opcional)
+   ├── Detecta componentes con muchas variantes
+   └── Reestructura para usar slots nativos
+
+3. create-voice
+   ├── Analiza pantallas terminadas
+   └── Genera specs de VoiceOver, TalkBack y ARIA
+
+4. prepare-handoff
+   ├── Audita nomenclatura y tokens
+   ├── Mapea slots a código (React children, Vue slot)
+   └── Genera resumen de handoff
 ```
 
 ## Industrias disponibles
@@ -89,13 +165,14 @@ Fork del [Figma Console MCP](https://github.com/southleft/figma-console-mcp) ext
 - Node.js 18 o superior
 - Claude Desktop con soporte MCP
 - Plugin **Figma Desktop Bridge** instalado en Figma
+- (Opcional) `FIGMA_ACCESS_TOKEN` para REST API features (variables, comentarios)
 
 ## Instalación
 
 ### 1. Clonar el repo
 ```bash
 git clone https://github.com/Razyel-Soma/figma-Murdoc.git
-cd figma-Bridge-Soma
+cd figma-Murdoc
 npm install
 ```
 
@@ -105,7 +182,7 @@ npm install
 2. Ve a `Plugins → Development → Import plugin from manifest...`
 3. Selecciona el archivo:
 ```
-figma-Bridge-Soma/figma-desktop-bridge/manifest.json
+figma-Murdoc/figma-desktop-bridge/manifest.json
 ```
 4. El plugin aparecerá como **"Figma Desktop Bridge"**
 
@@ -116,19 +193,23 @@ npm run build:local
 
 ### 4. Conectar con Claude Desktop
 
-Edita `~/Library/Application Support/Claude/claude_desktop_config.json` y añade:
+Edita `~/.claude.json` y añade:
 ```json
 {
   "mcpServers": {
-    "figma-murdoc": {
+    "figma-console": {
       "command": "node",
-      "args": ["/ruta/a/figma-Bridge-Soma/dist/local.js"]
+      "args": ["/ruta/a/figma-Murdoc/dist/local.js"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_TU_TOKEN_AQUI",
+        "ENABLE_MCP_APPS": "true"
+      }
     }
   }
 }
 ```
 
-Reemplaza `/ruta/a/` con la ruta real donde clonaste el repo. Reinicia Claude Desktop.
+Reemplaza `/ruta/a/` con la ruta real. El token es opcional pero habilita REST API features. Reinicia Claude Desktop.
 
 ### 5. Verificar la instalación
 
@@ -137,7 +218,7 @@ En Claude Desktop escribe:
 list_skills
 ```
 
-Deberías ver los 11 skills disponibles.
+Deberías ver los 15 skills disponibles.
 
 ## Uso
 
@@ -154,13 +235,17 @@ Describe lo que quieres en lenguaje natural:
 ```
 Configura el sistema de diseño base con Radix
 Genera los componentes de fintech para el cliente BancoX
-Documenta el componente Button de mi sistema de diseño
+Crea la librería de componentes desde mi codebase React
 Prepara el flujo de checkout para entregarlo a los devs
+Genera las specs de VoiceOver para la pantalla de login
+Audita mi librería para ver qué componentes migrar a slots
 ```
 
 ### Invocar un skill manualmente
 ```
-use_skill generate-industry
+use_skill generate-library
+use_skill create-voice
+use_skill migrate-to-slots
 ```
 
 ## Añadir skills propios
@@ -185,26 +270,30 @@ SKILL
 
 ## Estructura del proyecto
 ```
-figma-Bridge-Soma/
-├── skills/                        ← Skills en markdown (sin compilar)
-│   ├── figma-use.md
-│   ├── generate-screen.md
-│   ├── generate-onboarding.md
-│   ├── generate-documentation.md
-│   ├── generate-showcase-page.md
-│   ├── prepare-handoff.md
-│   ├── sync-tokens.md
-│   ├── audit-quality.md
-│   ├── apply-design-system.md
-│   ├── setup-radix-base.md
-│   └── generate-industry.md
+figma-Murdoc/
+├── skills/                          ← Skills en markdown (15 archivos)
+│   ├── figma-use.md                 ← Base + reglas de Plugin API
+│   ├── generate-screen.md           ← Pantallas con estructura slot-ready
+│   ├── generate-onboarding.md       ← Flujos onboarding mobile
+│   ├── generate-library.md          ← Librería desde codebase
+│   ├── generate-documentation.md    ← Documentación de componentes
+│   ├── generate-showcase-page.md    ← Web del DS
+│   ├── prepare-handoff.md           ← Handoff con mapeo de slots
+│   ├── sync-tokens.md               ← Exportar tokens a código
+│   ├── audit-quality.md             ← QA + detección de candidatos a slots
+│   ├── create-voice.md              ← Specs screen reader (a11y)
+│   ├── migrate-to-slots.md          ← Migración a slots nativos
+│   ├── slot-patterns.md             ← Patrones de composición con slots
+│   ├── apply-design-system.md       ← Conectar al DS
+│   ├── setup-radix-base.md          ← Tokens Radix UI
+│   └── generate-industry.md         ← DS por industria
 ├── src/
-│   ├── skills/loader.ts           ← Lee los .md en tiempo real
-│   ├── tools/skills.ts            ← Tools list_skills y use_skill
-│   └── local.ts                   ← Servidor MCP (modificado)
-├── figma-desktop-bridge/          ← Plugin de Figma (sin cambios)
-├── figma-murdoc.md                ← Instrucciones de arranque
-└── dist/local.js                  ← Entry point compilado
+│   ├── skills/loader.ts             ← Lee los .md en tiempo real
+│   ├── tools/skills.ts              ← Tools list_skills y use_skill
+│   └── local.ts                     ← Servidor MCP
+├── figma-desktop-bridge/            ← Plugin de Figma
+├── figma-murdoc.md                  ← Instrucciones de arranque + reglas Plugin API
+└── dist/local.js                    ← Entry point compilado
 ```
 
 ## Documentación adicional
