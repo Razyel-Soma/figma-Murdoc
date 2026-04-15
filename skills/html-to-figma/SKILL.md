@@ -25,28 +25,165 @@ Skill para migrar prototipos HTML/React/JSX generados en Claude Desktop, Claude 
 HTML/React/CSS (input)
        │
        ▼
-┌─────────────────┐
-│  1. ANÁLISIS    │ → Parsear código, extraer estructura
-└────────┬────────┘
+┌─────────────────────┐
+│  0. ANÁLISIS        │ → Claude lee y entiende el HTML completo
+│     SEMÁNTICO       │   (NO regex — comprensión de lenguaje)
+└────────┬────────────┘
          ▼
-┌─────────────────┐
-│  2. TOKENS      │ → CSS vars / Tailwind → Figma Variables
-└────────┬────────┘
+┌─────────────────────┐
+│  1. EXTRACCIÓN      │ → Tokens CSS + estructura de componentes
+│     DE TOKENS       │   (parser automático + validación Claude)
+└────────┬────────────┘
          ▼
-┌─────────────────┐
-│  3. COMPONENTES │ → Elementos reutilizables → Figma Components
-└────────┬────────┘
+┌─────────────────────┐
+│  2. CREACIÓN DE     │ → CSS vars / Tailwind → Figma Variables
+│     TOKENS FIGMA    │   (colores, tipografía, spacing, radii)
+└────────┬────────────┘
          ▼
-┌─────────────────┐
-│  4. PANTALLAS   │ → Layouts completos → Figma Frames
-└────────┬────────┘
+┌─────────────────────┐
+│  3. COMPONENTES     │ → Cada componente con CONTENIDO REAL
+│     DE ALTA         │   del HTML, no placeholders genéricos
+│     FIDELIDAD       │
+└────────┬────────────┘
          ▼
-┌─────────────────┐
-│  5. HANDOFF     │ → Documentar, anotar, entregar a diseño
-└────────┘────────┘
+┌─────────────────────┐
+│  4. PANTALLAS       │ → TODAS las pantallas del flujo,
+│     COMPLETAS       │   con contenido real y jerarquía visual
+└────────┬────────────┘
+         ▼
+┌─────────────────────┐
+│  5. HANDOFF         │ → Documentar, anotar, entregar a diseño
+└─────────────────────┘
 ```
 
-## Paso 1 — Obtener y analizar el código fuente
+## Paso 0 — Análisis Semántico (CRÍTICO — lo hace Claude, NO el parser)
+
+> ⚠️ Este paso es el más importante y el que diferencia una migración mecánica
+> (4/10) de una migración de alta fidelidad (8-9/10). Claude DEBE leer y entender
+> el HTML completo antes de tocar Figma.
+
+### Cómo obtener el HTML
+
+Claude debe primero obtener el código fuente completo usando una de estas vías:
+
+- **Archivo subido**: Leer desde `/mnt/user-data/uploads/` con `view` o `bash cat`
+- **Código pegado en el chat**: Ya está en contexto, leer directamente
+- **Referencia a artefacto previo**: Buscar con `conversation_search`
+- **URL de un deploy**: Obtener con `web_fetch`
+
+> ⚠️ Claude DEBE leer TODO el contenido (HTML + CSS + JS) antes de continuar.
+> No saltar secciones, no resumir. Leer cada línea para entender la app completa.
+
+### Qué debe hacer Claude en este paso
+
+1. **Leer el HTML completo** — No un resumen, no fragments. Claude lee CADA línea
+   del HTML, CSS y JavaScript para entender la aplicación como un todo.
+
+2. **Identificar la Arquitectura de Información:**
+   - ¿Cuántas pantallas/vistas tiene la app?
+   - ¿Cuál es el flujo de navegación? (ej: Splash → Landing → Dashboard)
+   - ¿Hay roles de usuario? (ej: Veterinario vs Tutor)
+   - ¿Hay tabs, modales, drawers, overlays?
+   - ¿Qué secciones tiene cada pantalla?
+
+3. **Extraer el contenido REAL de cada pantalla:**
+   Para cada pantalla, Claude debe listar:
+   - Título y subtítulo exactos
+   - Textos de cada sección
+   - Datos de ejemplo (nombres, números, fechas)
+   - Labels de botones y acciones
+   - Contenido de listas y cards
+
+4. **Mapear el sistema visual con precisión:**
+   - Familia tipográfica y pesos usados (ej: Nunito 400-900)
+   - Sistema de sombras (ej: clay morphism con 3 estados)
+   - Gradientes específicos (ej: linear-gradient 135deg)
+   - Border-radius por tipo de componente
+   - Paleta de colores con nombres semánticos
+
+5. **Inventariar componentes CON variantes:**
+   Para cada componente, Claude identifica:
+   - Nombre descriptivo
+   - Variantes (estados, tamaños, colores)
+   - Props editables (textos, toggles)
+   - Contenido de ejemplo real del HTML
+   - Cómo se compone con otros componentes
+
+### Formato del output del análisis semántico
+
+Claude debe producir un documento estructurado antes de crear nada en Figma:
+
+```
+## Arquitectura de Información
+
+### Flujo de navegación
+Splash (2.2s) → Landing (selección rol) → [Vet Dashboard | Tutor Dashboard]
+Tutor Dashboard: Tab Bar [Inicio | Salud | Premios | Tips] + Bottom Nav
+
+### Pantallas (6 total)
+1. Splash — logo animado, auto-dismiss
+2. Landing — logo, tagline, 2 role cards
+3. Home (Tutor) — hero pet, reminder, stats, quick actions
+4. Salud — dose tracker, OA status, vet info, emergency
+5. Premios — points, earning activities, rebates, streak
+6. Tips — consejos, suplementos carousel, diary
+
+### Componentes inventariados (15)
+1. Clay Card — base del sistema, 3 estados de sombra
+2. Clay Button — Primary (gradient) / Outline
+3. Badge — 5 variantes de color (teal, green, orange, red, primary)
+...etc
+
+### Contenido real por pantalla
+#### Landing
+- Logo: "Huella" (Nunito 900, 50px) + bar rotada -15deg
+- Subtítulo: "BY ELANCO" (Nunito 800, 13px, spacing .2em, uppercase)
+- Descripción: "Cuidado inteligente para tu mascota..."
+- Role Card 1: icon stethoscope, "Veterinario", "Gestiona pacientes y tratamientos"
+- Role Card 2: icon heart, "Tutor", "Cuida la salud de tu mascota"
+...etc
+```
+
+### Por qué este paso es crítico
+
+Sin análisis semántico, el skill genera:
+- Componentes con texto "Card Title" y "Button Label" (genéricos)
+- Una sola pantalla "Home" ensamblada mecánicamente
+- Sin flujo de navegación entre pantallas
+- Sin contenido real que permita al equipo de diseño entender la app
+
+Con análisis semántico, el skill genera:
+- Componentes con "Galliprant 8:00 AM" y "Enviar alerta urgente" (reales)
+- 6 pantallas completas con todo el contenido del HTML
+- Flujo de navegación visible en Figma (secciones organizadas)
+- El equipo de diseño puede iterar inmediatamente
+
+### Output obligatorio: Diagrama de Arquitectura en Figma
+
+Una vez completado el análisis semántico (que Claude presenta en el chat como
+documento estructurado), el siguiente paso es **materializar ese análisis
+en Figma** como un diagrama visual.
+
+Este diagrama es el PRIMER artefacto que se crea en Figma — antes de tokens,
+antes de componentes, antes de pantallas. Es el "mapa" del proyecto.
+
+El diagrama debe vivir en una sección dedicada "📐 Architecture" y contener:
+
+1. **Título y metadata** — nombre del proyecto, fuente del análisis
+2. **Flujo de navegación** — cajas para cada pantalla conectadas por flechas
+   que muestran el flujo (ej: Splash → Landing → Dashboard)
+3. **Contenido por pantalla** — cada caja lista los elementos clave con
+   contenido REAL del HTML (no genérico)
+4. **Elementos compartidos** — nota con componentes que se repiten entre
+   pantallas (Header, Tab Bar, Bottom Nav, etc.)
+5. **Sistema visual** — nota con la paleta, tipografía, y estilo (ej: clay
+   morphism, gradientes, etc.)
+
+Este diagrama es el "mapa" que el equipo de diseño usa para entender
+la app antes de iterar. Sin él, las pantallas en Figma carecen de
+contexto y el diseñador no sabe qué flujo conecta qué.
+
+## Paso 1 — Extracción de Tokens (parser + Claude)
 
 ### Fuentes válidas de input
 
@@ -338,6 +475,25 @@ figma_instantiate_component({
 
 ## Paso 5 — Documentación y handoff
 
+### Estructura final del archivo Figma
+
+El archivo Figma debe contener estas secciones en orden:
+
+1. **📐 Architecture** — Diagrama de arquitectura de información
+   - Flujo de navegación completo
+   - Contenido real por pantalla
+   - Elementos compartidos
+   - Sistema visual documentado
+
+2. **📦 Components** — Componentes del design system
+   - Organizados por tipo (primitivos → compuestos)
+   - Con variantes y properties
+
+3. **📱 Screens** — Pantallas completas del flujo
+   - Todas las pantallas identificadas en Step 0
+   - Con contenido real del HTML
+   - Nombradas: "[Flujo]/[Número] - [Nombre]"
+
 ### Anotar componentes
 
 Para cada componente creado, agregar anotaciones con `figma_set_annotations`:
@@ -352,6 +508,12 @@ Presentar al usuario un resumen de la migración:
 
 ```
 ## Migración completada ✅
+
+### Arquitectura de Información
+- Diagrama visual en sección "📐 Architecture"
+- N pantallas mapeadas con flujos de navegación
+- Elementos compartidos documentados
+- Sistema visual especificado
 
 ### Tokens creados
 - Colors: 12 variables (Light + Dark)
@@ -371,11 +533,12 @@ Presentar al usuario un resumen de la migración:
 - Booking/01 - Selección (mobile)
 
 ### Siguiente paso para diseño
-1. Revisar tokens y ajustar paleta si es necesario
-2. Refinar componentes: detalle visual, micro-interacciones
-3. Convertir frames slot-* a slots nativos (clic derecho → Convert to slot)
-4. Crear casos de uso y edge cases adicionales
-5. Publicar librería para el equipo
+1. Revisar el diagrama de arquitectura para entender los flujos
+2. Revisar tokens y ajustar paleta si es necesario
+3. Refinar componentes: detalle visual, micro-interacciones
+4. Convertir frames slot-* a slots nativos (clic derecho → Convert to slot)
+5. Crear casos de uso y edge cases adicionales
+6. Publicar librería para el equipo
 ```
 
 ## Mapeo de elementos HTML → Figma
@@ -399,6 +562,11 @@ Presentar al usuario un resumen de la migración:
 
 ## Errores a evitar
 
+- **CRÍTICO: `resize()` sobreescribe `primaryAxisSizingMode` a "FIXED".**
+  Si necesitas que un frame hug su contenido (AUTO), NUNCA uses `resize()`.
+  En su lugar, usa solo `counterAxisSizingMode = "FIXED"` + un resize del ancho,
+  o setea `primaryAxisSizingMode = "AUTO"` DESPUÉS de resize.
+  Ejemplo para VERTICAL layout: `frame.resize(327, 1); frame.primaryAxisSizingMode = "AUTO";`
 - No crear tokens duplicados si ya existen en el archivo
 - No hardcodear colores si hay variables disponibles
 - No crear componentes sin Auto Layout

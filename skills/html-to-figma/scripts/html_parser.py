@@ -78,7 +78,8 @@ TAILWIND_FONT_WEIGHT = {
 }
 
 
-def extract_tailwind_classes(code):
+def extract_tailwind_classes(code: str) -> list[str]:
+    """Extract all Tailwind class names from className/class attributes."""
     patterns = [
         r'className\s*=\s*["\']([^"\']+)["\']',
         r'className\s*=\s*\{`([^`]+)`\}',
@@ -90,34 +91,42 @@ def extract_tailwind_classes(code):
     for pattern in patterns:
         matches = re.findall(pattern, code)
         for m in matches:
+            # Clean up template literals and conditionals
             cleaned = re.sub(r'\$\{[^}]+\}', '', m)
             cleaned = re.sub(r'["\',]', ' ', cleaned)
             classes.extend(cleaned.split())
     return classes
 
 
-def extract_css_variables(code):
+def extract_css_variables(code: str) -> dict:
+    """Extract CSS custom properties from :root or inline styles."""
     tokens = {}
+    # Match :root { --var-name: value; }
     root_blocks = re.findall(r':root\s*\{([^}]+)\}', code, re.DOTALL)
     for block in root_blocks:
         vars_found = re.findall(r'--([\w-]+)\s*:\s*([^;]+);', block)
         for name, value in vars_found:
             tokens[f"--{name}"] = value.strip()
+
+    # Match data-theme or .dark blocks
     dark_blocks = re.findall(r'(?:\[data-theme=["\']dark["\']\]|\.dark)\s*\{([^}]+)\}', code, re.DOTALL)
     for block in dark_blocks:
         vars_found = re.findall(r'--([\w-]+)\s*:\s*([^;]+);', block)
         for name, value in vars_found:
             tokens[f"--{name}__dark"] = value.strip()
+
     return tokens
 
 
-def extract_inline_colors(code):
+def extract_inline_colors(code: str) -> list[str]:
+    """Extract hex colors and rgb/rgba from inline styles and CSS."""
     hex_colors = re.findall(r'#(?:[0-9a-fA-F]{3}){1,2}\b', code)
     rgb_colors = re.findall(r'rgba?\([^)]+\)', code)
     return list(set(hex_colors + rgb_colors))
 
 
-def classify_tailwind_tokens(classes):
+def classify_tailwind_tokens(classes: list[str]) -> dict:
+    """Classify Tailwind classes into token categories."""
     colors_used = Counter()
     spacing_used = Counter()
     font_sizes_used = Counter()
@@ -126,32 +135,43 @@ def classify_tailwind_tokens(classes):
     font_weights_used = Counter()
 
     for cls in classes:
+        # Colors: bg-{color}-{shade}, text-{color}-{shade}, border-{color}-{shade}
         color_match = re.match(r'(?:bg|text|border|ring|accent|from|to|via)-([\w]+)-(\d+)', cls)
         if color_match:
             color_name, shade = color_match.groups()
             if color_name in TAILWIND_COLORS:
                 colors_used[f"{color_name}-{shade}"] += 1
             continue
+
+        # Spacing: p-{n}, m-{n}, gap-{n}, space-x-{n}, etc.
         spacing_match = re.match(r'(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr|gap|space-[xy])-(\S+)', cls)
         if spacing_match:
             val = spacing_match.group(1)
             if val in TAILWIND_SPACING:
                 spacing_used[val] += 1
             continue
+
+        # Font size: text-{size}
         font_match = re.match(r'text-(xs|sm|base|lg|xl|2xl|3xl|4xl|5xl|6xl)$', cls)
         if font_match:
             font_sizes_used[font_match.group(1)] += 1
             continue
+
+        # Border radius: rounded-{size}
         radius_match = re.match(r'rounded(?:-(none|sm|md|lg|xl|2xl|3xl|full))?$', cls)
         if radius_match:
             size = radius_match.group(1) or ""
             radii_used[size] += 1
             continue
+
+        # Shadow: shadow-{size}
         shadow_match = re.match(r'shadow(?:-(sm|md|lg|xl|2xl))?$', cls)
         if shadow_match:
             size = shadow_match.group(1) or ""
             shadows_used[size] += 1
             continue
+
+        # Font weight: font-{weight}
         weight_match = re.match(r'font-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)$', cls)
         if weight_match:
             font_weights_used[weight_match.group(1)] += 1
@@ -167,16 +187,22 @@ def classify_tailwind_tokens(classes):
     }
 
 
-def detect_react_components(code):
+def detect_react_components(code: str) -> list[dict]:
+    """Detect React/JSX component definitions."""
     components = []
+
+    # Function components: function Name( or const Name = (
     patterns = [
         r'(?:export\s+)?(?:default\s+)?function\s+([A-Z]\w+)\s*\(([^)]*)\)',
         r'(?:export\s+)?(?:default\s+)?const\s+([A-Z]\w+)\s*(?::\s*\w+\s*)?=\s*(?:\([^)]*\)|(\w+))\s*=>',
     ]
+
     for pattern in patterns:
         for match in re.finditer(pattern, code):
             name = match.group(1)
+            # Extract props
             props = extract_component_props(code, name)
+            # Check for variants
             variants = detect_variants(code, name)
             components.append({
                 "name": name,
@@ -184,11 +210,15 @@ def detect_react_components(code):
                 "variants": variants,
                 "has_children": "children" in code[match.start():match.start()+2000].lower()
             })
+
     return components
 
 
-def extract_component_props(code, component_name):
+def extract_component_props(code: str, component_name: str) -> dict:
+    """Extract props from a component definition."""
     props = {}
+
+    # Look for destructured props: { prop1, prop2, ...}
     pattern = rf'{component_name}\s*(?::\s*\w+\s*)?=?\s*(?:function\s*)?\(?\s*\{{\s*([^}}]+)\}}'
     match = re.search(pattern, code)
     if match:
@@ -198,6 +228,8 @@ def extract_component_props(code, component_name):
             if p in ('children', 'className', 'style', 'key', 'ref'):
                 continue
             props[p] = guess_prop_type(p, code)
+
+    # Look for TypeScript interface/type
     type_pattern = rf'(?:interface|type)\s+{component_name}Props\s*(?:=\s*)?\{{([^}}]+)\}}'
     type_match = re.search(type_pattern, code)
     if type_match:
@@ -207,10 +239,12 @@ def extract_component_props(code, component_name):
             if name in ('children', 'className', 'style', 'key', 'ref'):
                 continue
             props[name] = ts_type_to_figma(type_val.strip())
+
     return props
 
 
-def guess_prop_type(prop_name, code):
+def guess_prop_type(prop_name: str, code: str) -> str:
+    """Guess Figma property type from prop name patterns."""
     name_lower = prop_name.lower()
     if any(k in name_lower for k in ['disabled', 'visible', 'show', 'active', 'open', 'loading', 'checked']):
         return "BOOLEAN"
@@ -221,7 +255,8 @@ def guess_prop_type(prop_name, code):
     return "TEXT"
 
 
-def ts_type_to_figma(ts_type):
+def ts_type_to_figma(ts_type: str) -> str:
+    """Map TypeScript type to Figma property type."""
     ts_type = ts_type.strip().rstrip(';')
     if ts_type == 'boolean':
         return "BOOLEAN"
@@ -229,14 +264,18 @@ def ts_type_to_figma(ts_type):
         return "TEXT"
     if ts_type in ('ReactNode', 'React.ReactNode', 'JSX.Element'):
         return "INSTANCE_SWAP"
-    if '|' in ts_type and all("'" in v or '"' in v for v in ts_type.split('|')):
+    if '|' in ts_type and all(f"'" in v or '"' in v for v in ts_type.split('|')):
         return "VARIANT"
     return "TEXT"
 
 
-def detect_variants(code, component_name):
+def detect_variants(code: str, component_name: str) -> dict:
+    """Detect variant props (size, variant, etc.) from conditional logic."""
     variants = {}
+
+    # Look for variant-like props with string literal unions
     variant_pattern = r'(\w+)\s*(?:===?|!==?)\s*["\'](\w+)["\']'
+    # Search within component body (rough heuristic)
     comp_start = code.find(component_name)
     if comp_start >= 0:
         chunk = code[comp_start:comp_start+5000]
@@ -247,6 +286,8 @@ def detect_variants(code, component_name):
                     variants[prop] = []
                 if value not in variants[prop]:
                     variants[prop].append(value)
+
+    # Look for TypeScript union types in props
     for prop_name in ['variant', 'size', 'type', 'status', 'state']:
         union_pattern = rf'{prop_name}\s*(?:\??\s*:\s*)((?:["\'][^"\']+["\'](?:\s*\|\s*)?)+)'
         match = re.search(union_pattern, code)
@@ -254,17 +295,23 @@ def detect_variants(code, component_name):
             values = re.findall(r'["\']([^"\']+)["\']', match.group(1))
             if values:
                 variants[prop_name] = values
+
     return variants
 
 
-def detect_html_components(code):
+def detect_html_components(code: str) -> list[dict]:
+    """Detect reusable patterns in plain HTML."""
     components = []
+    # Look for repeated class patterns that suggest components
     class_patterns = re.findall(r'class\s*=\s*["\']([^"\']+)["\']', code)
+
+    # Find root-level class names that appear multiple times
     root_classes = Counter()
     for classes in class_patterns:
         first_class = classes.split()[0] if classes.split() else ""
         if first_class and not first_class.startswith(('flex', 'grid', 'block', 'inline', 'hidden', 'w-', 'h-', 'p-', 'm-', 'text-', 'bg-', 'border')):
             root_classes[first_class] += 1
+
     for cls, count in root_classes.most_common(20):
         if count >= 2:
             components.append({
@@ -275,15 +322,20 @@ def detect_html_components(code):
                 "variants": {},
                 "has_children": True
             })
+
     return components
 
 
-def detect_screens(code, components):
+def detect_screens(code: str, components: list[dict]) -> list[dict]:
+    """Detect screen/page-level structures."""
     screens = []
+
+    # React: Look for page-level components or route patterns
     page_patterns = [
         r'(?:function|const)\s+((?:\w+)?(?:Page|Screen|View|Layout|Home|Dashboard|Login|Register|Profile|Settings))\s*',
         r'path\s*[:=]\s*["\']([^"\']+)["\']',
     ]
+
     for pattern in page_patterns:
         for match in re.finditer(pattern, code):
             name = match.group(1)
@@ -295,6 +347,8 @@ def detect_screens(code, components):
                 "components_used": [c["name"] for c in components[:5]],
                 "description": f"Screen: {name}"
             })
+
+    # HTML: Look for <main>, <section> with IDs, or major structural elements
     html_sections = re.findall(r'<(?:main|section)\s+(?:[^>]*id\s*=\s*["\']([^"\']+)["\'])?[^>]*>', code)
     for section_id in html_sections:
         if section_id:
@@ -304,6 +358,7 @@ def detect_screens(code, components):
                 "components_used": [c["name"] for c in components[:5]],
                 "description": f"Section: {section_id}"
             })
+
     if not screens:
         screens.append({
             "name": "Main",
@@ -311,11 +366,15 @@ def detect_screens(code, components):
             "components_used": [c["name"] for c in components],
             "description": "Main application screen"
         })
+
     return screens
 
 
-def build_token_spec(tw_tokens, css_vars, inline_colors):
+def build_token_spec(tw_tokens: dict, css_vars: dict, inline_colors: list) -> dict:
+    """Build the tokens section of the spec."""
     tokens = {"colors": {}, "typography": {}, "spacing": {}, "radii": {}, "shadows": []}
+
+    # Colors from Tailwind
     for color_key in tw_tokens.get("colors", {}):
         parts = color_key.rsplit("-", 1)
         if len(parts) == 2:
@@ -324,6 +383,8 @@ def build_token_spec(tw_tokens, css_vars, inline_colors):
                 hex_val = TAILWIND_COLORS[color_name][shade]
                 token_name = f"{color_name}/{shade}"
                 tokens["colors"][token_name] = {"light": hex_val}
+
+    # Colors from CSS vars
     for var_name, value in css_vars.items():
         if "__dark" in var_name:
             base_name = var_name.replace("__dark", "").replace("--", "")
@@ -334,6 +395,8 @@ def build_token_spec(tw_tokens, css_vars, inline_colors):
         elif "color" in var_name.lower() or value.startswith("#") or value.startswith("rgb"):
             clean_name = var_name.replace("--", "")
             tokens["colors"][clean_name] = {"light": value}
+
+    # Typography from Tailwind
     for size_name in tw_tokens.get("font_sizes", {}):
         if size_name in TAILWIND_FONT_SIZE:
             spec = TAILWIND_FONT_SIZE[size_name]
@@ -343,13 +406,19 @@ def build_token_spec(tw_tokens, css_vars, inline_colors):
                 "lineHeight": spec["lineHeight"],
                 "weight": "Regular"
             }
+
+    # Spacing from Tailwind
     for sp_key in tw_tokens.get("spacing", {}):
         if sp_key in TAILWIND_SPACING:
             tokens["spacing"][f"space-{sp_key}"] = TAILWIND_SPACING[sp_key]
+
+    # Radii from Tailwind
     for r_key in tw_tokens.get("radii", {}):
         if r_key in TAILWIND_RADIUS:
             name = r_key if r_key else "default"
             tokens["radii"][f"radius-{name}"] = TAILWIND_RADIUS[r_key]
+
+    # Shadows from Tailwind
     for s_key in tw_tokens.get("shadows", {}):
         if s_key in TAILWIND_SHADOW:
             spec = TAILWIND_SHADOW[s_key]
@@ -360,10 +429,12 @@ def build_token_spec(tw_tokens, css_vars, inline_colors):
                 "blur": spec["blur"],
                 "color": f"rgba(0,0,0,{spec['alpha']})"
             })
+
     return tokens
 
 
-def detect_framework(code):
+def detect_framework(code: str) -> str:
+    """Detect the framework used in the code."""
     if re.search(r'import\s+.*from\s+["\']react', code) or 'jsx' in code.lower() or 'useState' in code:
         return "react"
     if re.search(r'import\s+.*from\s+["\']vue', code) or '<template>' in code:
@@ -375,7 +446,8 @@ def detect_framework(code):
     return "unknown"
 
 
-def detect_css_approach(code):
+def detect_css_approach(code: str) -> str:
+    """Detect the CSS approach used."""
     tw_classes = extract_tailwind_classes(code)
     if len(tw_classes) > 5:
         return "tailwind"
@@ -387,21 +459,32 @@ def detect_css_approach(code):
     return "plain-css"
 
 
-def parse_file(filepath):
+def parse_file(filepath: str) -> dict:
+    """Main parsing function — reads a file and produces the spec JSON."""
     path = Path(filepath)
     code = path.read_text(encoding="utf-8", errors="replace")
+
     framework = detect_framework(code)
     css_approach = detect_css_approach(code)
+
+    # Extract raw data
     tw_classes = extract_tailwind_classes(code)
     tw_tokens = classify_tailwind_tokens(tw_classes)
     css_vars = extract_css_variables(code)
     inline_colors = extract_inline_colors(code)
+
+    # Detect components
     if framework == "react":
         components = detect_react_components(code)
     else:
         components = detect_html_components(code)
+
+    # Build tokens
     tokens = build_token_spec(tw_tokens, css_vars, inline_colors)
+
+    # Detect screens
     screens = detect_screens(code, components)
+
     spec = {
         "meta": {
             "nombre": path.stem.replace("-", " ").replace("_", " ").title(),
@@ -428,6 +511,7 @@ def parse_file(filepath):
             "screens_detected": len(screens)
         }
     }
+
     return spec
 
 
@@ -435,16 +519,20 @@ def main():
     if len(sys.argv) < 2:
         print("Uso: python html_parser.py <archivo> [--output spec.json]")
         sys.exit(1)
+
     filepath = sys.argv[1]
     output = "spec.json"
     if "--output" in sys.argv:
         idx = sys.argv.index("--output")
         if idx + 1 < len(sys.argv):
             output = sys.argv[idx + 1]
+
     spec = parse_file(filepath)
+
     with open(output, "w", encoding="utf-8") as f:
         json.dump(spec, f, indent=2, ensure_ascii=False)
-    print(f"Spec generado: {output}")
+
+    print(f"✅ Spec generado: {output}")
     print(f"   Framework: {spec['meta']['framework']}")
     print(f"   CSS: {spec['meta']['css_approach']}")
     print(f"   Tokens: {sum(len(v) if isinstance(v, (dict, list)) else 0 for v in spec['tokens'].values())}")
